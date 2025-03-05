@@ -73,10 +73,6 @@
         dat2.push( { "x":x, "y":y } );
       }
     }
-
-
-    console.log(JSON.stringify(dat1))
-
     // Make a simple circle grid
     let fishCircles = d3.select("#grid1").selectAll("circle").data(dat1)
                                          .join("circle")
@@ -105,9 +101,10 @@
     // Fisheye lens function
     const r = 100;
     const distortion = 2;
-    var focusPt = null;    // x,y mouse pos,  null if pointing nowhere
-
-
+    var focusPt = null;
+    
+    // Take in point d and output new version of d that has been distorted by the lens
+    // Assumes focusPt is up to date with mouse movement ( if null then lens not on screen )
     function distort( d ) {
       if ( focusPt === null ) { return { x: d.x, y: d.y, z: 1 }; }
       
@@ -143,21 +140,22 @@
     
     
     // Cartesian/manhattan lens function
-
-
-    // what if we make a "distorted" version of our d3 scale
-    //  hack: take in a scale, re-use as much of it as possible
-    //      this lets us be lazy - we don't have to write all of the functions
-    
-    function doiScale( originalScale, distortion, focusPt) {
-      
+    //  We'll make our own custom scale
+    //  There are many reasons to make a custom scale rather than just a function
+    //  For one thing, if you do it right then what you make will be compatible with other d3 elements
+    //  For another, it can force you to think about what your scale needs to do.
+    // doiScale will return a modified version of originalScale 
+    // Recall that scales are functions with other special properties attached
+    // So our custom scale creates a function called scale, and returns it at the end 
+    //   (this becomes our scale "object", just like every other d3 scale)
+    // Notice how the other things in doiScale modify the scale function to give it domain, range, etc
+    // Custom scales need to make sure to inherit domain, range, nice, ticks, tickFormat, and copy
+    function doiScale(originalScale, distortion, focusPt) {
+            
       function scale(d) {
-        //  the function we get when we use xScale(number) => pixel
-        // main functionality of our scale -- this distorts
-
         let x = originalScale(d);
-        if (focusPt === null) { return x } // no mouse, return original value
-
+        if ( focusPt === null ) { return x; }
+        
         let isLeft = x < focusPt;
         let [min, max] = d3.extent(scale.range());  // range may be inverted
         let totalDist = isLeft ? focusPt - min : max - focusPt;
@@ -169,72 +167,76 @@
         //  2 / (1 + 2) = .66  for 0.5,   2 / (1 + 4) = .4 for 0.25
         
         return isLeft ? focusPt - offset : focusPt + offset;
-
       }
-
-      // configuration options (things like scale.domain())
-
+      
       scale.domain = function(x) {
-        if (!arguments.length) return originalScale.domain()
+        if (!arguments.length) return originalScale.domain();
         originalScale.domain(x);
-        return scale;
+        return scale;  
+        
+        // Note, because we are re-using we could get away with just returning originalScale.domain(x)
+        //  or even just setting scale.domain = originalScale.domain.
+        // I'm just expanding it out here to show the pattern and program flow for the getters / setters
       }
       scale.range = function(x) {
-        if (!arguments.length) return originalScale.range()
-        originalScale.range(x)
-        return scale;
+        if (!arguments.length) return originalScale.range();
+        originalScale.range(x);
+        return scale;  
       }
       scale.focusPt = function(x) {
         if (!arguments.length) return focusPt;
         focusPt = x;
-        return scale;
+        return scale;  
       }
       scale.distortion = function(x) {
         if (!arguments.length) return distortion;
         distortion = x;
-        return scale;
+        return scale;  
       }
+      // Added after the error in applying axes
       scale.copy = function() {
         return doiScale(originalScale.copy(), distortion, focusPt);
-      }
+      };
       
-      
-
       scale.nice = originalScale.nice;
       scale.ticks = originalScale.ticks;
       scale.tickFormat = originalScale.tickFormat;
-
-      // return a modified scale function that mimics and original d3 scale
       return scale;
+      
     }
-
-
-    // demo for testing
-    let xCartScale = doiScale( d3.scaleLinear(), 1, 256);
-    xCartScale.domain([0,512]).range([0,512]);
-    let yCartScale = doiScale( d3.scaleLinear(), 1, 256);
-    yCartScale.domain([0,512]).range([0,512]);
+    
+    let xCartScale = doiScale( d3.scaleLinear(), 1, 256 );
+    xCartScale.domain([0,512])
+              .range([0,512]);
+    let yCartScale = doiScale( d3.scaleLinear(), 1, 256 );
+    yCartScale.domain([0,512])
+              .range([0,512]);
+    
 
     cartInteract.on("mouseout", () => {
+      // update focus
       xCartScale.focusPt(null);
       yCartScale.focusPt(null);
-
-      cartCircles.each( function(d) {
-        let dx = xCartScale(d.x);
-        let dy = yCartScale(d.y);
-        d3.select(this).attr("cx",dx).attr("cy",dy);
-      });
+      // cartCircles.each( function(d) {
+      //   let dx = xCartScale(d.x);
+      //   let dy = yCartScale(d.y);
+      //   d3.select(this).attr("cx", dx).attr("cy", dy);
+      // });
+      // Adjusting this to have a more normal d3 loop form
+      cartCircles.attr("cx", d => xCartScale(d.x)).attr("cy", d => yCartScale(d.y));
     });
     cartInteract.on("mousemove", ( event ) => {
-      [x,y] = d3.pointer(event)
+      [x, y] = d3.pointer(event)
+      // update focus
       xCartScale.focusPt(x);
       yCartScale.focusPt(y);
-
-      cartCircles.each( function(d) {
-        let dx = xCartScale(d.x);
-        let dy = yCartScale(d.y);
-        d3.select(this).attr("cx",dx).attr("cy",dy);
-      });
+      // cartCircles.each( function(d) {
+      //   let dx = xCartScale(d.x);
+      //   let dy = yCartScale(d.y);
+      //   d3.select(this).attr("cx", dx).attr("cy", dy);
+      // });
+      // Adjusting this to have a more normal d3 loop form
+      cartCircles.attr("cx", d => xCartScale(d.x)).attr("cy", d => yCartScale(d.y));
     });
     
     
@@ -272,6 +274,7 @@
           data.push(inputData[i]);
       }
       
+
       const xScale = d3.scaleLinear().domain(d3.extent(data, d => d['average_rating']))
                                      .range([10, chartWidth-10]);
       const yScale = d3.scaleSymlog().domain(d3.extent(data, d => d['users_rated']))
@@ -292,9 +295,10 @@
                             .attr("r", 6)
                             .attr("opacity", 0.8)
                             .attr("fill", "steelblue");
-      plot.append("rect").attr("x",0).attr("y",0)
-                         .attr("width", width).attr("height",height)
-                         .attr("fill","none");
+      interact = chartArea.append("rect").attr("x",0).attr("y",0)
+                          .attr("width", chartWidth).attr("height",chartHeight)
+                          .attr("fill","none")
+                          .style("pointer-events","all");;
 
                          
       // // To copy/paste
@@ -307,7 +311,8 @@
       // d3.select("g.x.gridlines").call(xGridlines);
       // d3.select("g.y.gridlines").call(yGridlines);
 
-
+      // Make some blank doiScales
+      // This time we actually give it the original x and y scales to adjust
       xDoiScale = doiScale(xScale, 1, null);
       yDoiScale = doiScale(yScale, 1, null);
       
@@ -367,7 +372,16 @@
 
       });
 
-      
+      // AFTER CLASS
+      // BONUS: Adding a fun switch where the distortion ramps up if you click your mouse
+      interact.on("mousedown", function() {
+        xDoiScale.distortion(3)
+        yDoiScale.distortion(3)
+      })
+      interact.on("mouseup", function() {
+        xDoiScale.distortion(1)
+        yDoiScale.distortion(1)
+      })
       
 
 
