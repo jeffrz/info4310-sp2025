@@ -144,9 +144,64 @@
 
 
       // Set up tone.js for sound
+
+      const volume = new Tone.Volume(-20).toDestination();
+
+      const synth = new Tone.PolySynth(Tone.synth, 
+                                { oscillator: { type: "sine" },
+                              envelope: {attack: 0.05, release: 0.05 } }).connect(volume);
+
+      // const synth = new Tone.Synth().connect(volume);
       
+      const frequencyScale = d3.scalePow().exponent(2).domain(carbonExtent).range([130.81, 523.25]); // C3 C5
       
-      
+      let highlightDuration = 140;
+      let button = d3.select("button#lineplay");
+      let playing = false;
+      button.on("click", async function() {
+        
+        if (playing) {
+          // stop playing
+          circles.interrupt();
+          circles.transition().attr("fill","navy");
+
+          button.text("Play");
+          playing = false;
+          return;
+        }
+        
+        playing = true;
+        button.text("Stop");
+        
+        // Animation happens here    
+        await circles.transition()
+                    .delay( (d,i) => i * (highlightDuration + 5) )
+                    .duration( highlightDuration )
+                    .attr("fill", "red")
+                    .on("start", (d, i) => {
+
+                      console.log(d['Carbon Dioxide (ppm)']);
+
+                      let freq = frequencyScale(d['Carbon Dioxide (ppm)']);
+
+                      freq = closestFrequency(freq);
+
+                      instruments.piano.triggerAttackRelease([freq, freq*1.25, freq*1.5], highlightDuration/1000);
+
+                      // synth.triggerAttackRelease(
+                      //     [freq, freq*1.25, freq*1.5], highlightDuration/1000);
+                    })
+                    .end();
+
+        
+        
+        // after stuff is finished, clean up
+        circles.transition().attr("fill","navy");
+        playing = false;
+        button.text("Play");
+        
+        
+      })
       
       
       
